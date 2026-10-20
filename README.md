@@ -1,79 +1,136 @@
-# Lyme Disease Rash Classifier
+<div align="center">
 
-A ResNet-50 deep learning model that estimates whether a skin rash photo looks like erythema migrans, the "bullseye" rash of early Lyme disease.
+# 🩺 Lyme Rash Classifier
 
-**[Try the live demo](https://huggingface.co/spaces/nishanthharish/lyme-rash-classifier)** — the model runs entirely in your browser with TensorFlow.js, so photos are never uploaded.
+**Deep learning that flags the "bullseye" rash of early Lyme disease from a single photo, running entirely in your browser.**
 
-> **Not a medical device.** This is a research demo. It cannot diagnose Lyme disease, and a negative result does not rule it out. If you have a suspected tick bite or an expanding rash, see a doctor.
+[![Live demo](https://img.shields.io/badge/demo-Hugging%20Face%20Spaces-ffcc4d?logo=huggingface&logoColor=black)](https://huggingface.co/spaces/nishanthharish/lyme-rash-classifier)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![TensorFlow](https://img.shields.io/badge/TensorFlow-Keras-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org/)
+[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-in--browser-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org/js)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<!-- RESULTS-BADGE: update the number when the model changes -->
+[![Test accuracy](https://img.shields.io/badge/test%20accuracy-75.3%25-blue)](#-results)
 
-## About
+[**▶ Try the live demo**](https://huggingface.co/spaces/nishanthharish/lyme-rash-classifier) · [Results](#-results) · [How it works](#-how-it-works) · [Roadmap](#-roadmap)
 
-Built from my MSc Data Analytics thesis at Dublin Business School, *Predictive Modeling of Lyme Disease Detection Using Deep Learning* (supervisor: Meghana Kshirsagar, January 2024). Research question: how effective is fine-tuning a ResNet-50 model at classifying Lyme disease from dermatological images?
+<img src="assets/demo.gif" alt="Demo: uploading a rash photo and getting a prediction" width="640">
 
-## Repository layout
+</div>
 
-| Folder | Contents |
+> [!WARNING]
+> **Not a medical device.** This is a research project. It cannot diagnose Lyme disease, and a negative result does not rule it out. If you have a suspected tick bite or an expanding rash, see a doctor.
+
+## ✨ Highlights
+
+- **Private by design:** the model runs client-side with TensorFlow.js, so photos never leave the user's device.
+- **Transfer learning:** ResNet-50 pretrained on ImageNet, fine-tuned in two stages on dermatological images.
+- **Honest evaluation:** I found that most of the dataset was duplicated (`x.jpg` and `x copy.jpg`), so the same images leaked into both training and test and inflated my thesis accuracy to 80.8%. I deduplicated by content hash, retrained, and report the honest 75.3% on a leak-free test split.
+- **Lightweight deployment:** 8-bit quantized weights (23 MB, down from 207 MB) with no accuracy loss, served as a free static site.
+
+## 🎯 Problem
+
+Erythema migrans, the expanding "bullseye" rash, is the earliest visible sign of Lyme disease and appears in most cases. Treating early prevents serious complications, but the rash is easy to confuse with other skin conditions. This project asks: **how well can a fine-tuned ResNet-50 tell Lyme rashes apart from other skin lesions?**
+
+It began as my MSc Data Analytics thesis at Dublin Business School, *Predictive Modeling of Lyme Disease Detection Using Deep Learning* (supervisor: Meghana Kshirsagar, January 2024).
+
+## 🧠 How it works
+
+```mermaid
+flowchart LR
+    A[Rash photo] --> B[Resize 224x224 RGB]
+    B --> C[ResNet-50 backbone<br/>ImageNet weights,<br/>conv5 fine-tuned]
+    C --> D[AvgPool 7x7 → Dense 64 ReLU<br/>→ Dropout 0.5]
+    D --> E[Softmax<br/>Lyme / Not Lyme]
+```
+
+| Step | Details |
 | --- | --- |
-| `notebook/` | Original thesis notebook (Google Colab) |
-| `training/` | `train.py` retraining script, test metrics and classification report |
-| `web-app/` | The deployed in-browser app: `index.html`, bundled `tf.min.js`, TensorFlow.js model (`model.json` + 23 MB quantized weights) |
-| `gradio-app/` | Alternative Python/Gradio app (needs the full Keras model, not included) |
+| Data | Kaggle [Lyme Disease Rashes](https://www.kaggle.com/datasets/sshikamaru/lyme-disease-rashes) plus web-sourced images. 2,060 files, **987 unique** after hash dedup. Split 711 train / 78 val / 198 test. Images are not redistributed here. |
+| Augmentation | Rotation ±25°, zoom and shift ±10%, horizontal flip |
+| Stage 1 | Frozen backbone, train head with Adam (lr 1e-4), batch 32, early stopping |
+| Stage 2 | Unfreeze the last residual block (`conv5`), fine-tune at lr 1e-5 |
+| Export | TensorFlow.js graph model, uint8 quantized (23 MB) |
 
-## Data
+## 📊 Results
 
-- Kaggle [Lyme Disease Rashes](https://www.kaggle.com/datasets/sshikamaru/lyme-disease-rashes) dataset plus web-sourced images: 2,060 files (978 Positive, 1,082 Negative). The images are not included in this repo.
-- Most images appeared twice (`x.jpg` and `x copy.jpg`). Duplicates were removed by content hash before splitting, leaving **987 unique images**: 711 train, 78 validation, 198 test, so no test image leaks into training.
-- Images resized to 224 x 224 RGB; training augmentation with rotation (±25°), zoom and shift (±10%) and horizontal flips.
-
-## Model
-
-- ResNet-50 pretrained on ImageNet, with a head of AveragePooling2D (7x7), Flatten, Dense 64 ReLU, Dropout 0.5 and Dense 2 softmax.
-- Stage 1: frozen base, head trained with Adam (lr 1e-4), batch 32, early stopping.
-- Stage 2: the last residual block (`conv5`) fine-tuned at lr 1e-5.
-- Converted to a TensorFlow.js graph model with 8-bit quantized weights (23 MB).
-
-## Results (198 held-out test images)
+<!-- RESULTS:START  Source: training/metrics.json and training/classification_report.txt. Update this block when the model changes. -->
+Evaluated on **198 held-out test images** that never appear in training.
 
 | Class | Precision | Recall | F1 |
-| --- | --- | --- | --- |
-| Positive (Lyme) | 0.87 | 0.60 | 0.71 |
-| Negative | 0.69 | 0.91 | 0.78 |
+| --- | :---: | :---: | :---: |
+| Lyme (Positive) | 0.87 | 0.60 | 0.71 |
+| Not Lyme (Negative) | 0.69 | 0.91 | 0.78 |
+| **Accuracy** | | | **75.3%** |
 
-**Accuracy: 75.3%.** When the model says "Lyme" it is usually right, but it misses about 4 in 10 Lyme rashes. The thesis reported 80.8%, but that figure was inflated by duplicate images appearing in both training and test; 75.3% is the honest number on a deduplicated split. The quantized browser model scores the same as the original Keras model.
+Confusion matrix (rows are true labels):
 
-## Run it yourself
+| | Predicted Negative | Predicted Positive |
+| --- | :---: | :---: |
+| **True Negative** | 88 | 9 |
+| **True Positive** | 40 | 61 |
+<!-- RESULTS:END -->
 
-**Web app:** serve the `web-app/` folder with any static server and open it in a browser:
+**What this means:** when the model says "Lyme" it is usually right, but it currently misses about 4 in 10 Lyme rashes. Raising that recall is the main goal of version 2.0. The quantized browser model scores the same as the full Keras model.
 
-    cd web-app
-    python -m http.server 8000
+## 🚀 Run it yourself
 
-Then open http://localhost:8000.
+**Web app** (no install beyond Python):
 
-**Retrain:** download the dataset into a folder with `Negative/` and `Positive/` subfolders, then:
+```bash
+cd web-app
+python -m http.server 8000
+# open http://localhost:8000
+```
 
-    pip install tensorflow scikit-learn
-    python training/train.py path/to/dataset output_dir improved
+**Retrain** (put the dataset in a folder with `Negative/` and `Positive/` subfolders):
 
-## Limitations
+```bash
+pip install tensorflow scikit-learn
+python training/train.py path/to/dataset output_dir improved
+```
 
-- Low recall on Lyme rashes is the main weakness.
-- Small dataset (987 images) of web photos with varied lighting and quality.
-- No labels for skin tone, lesion stage or body site, so performance across those groups is unknown.
+**Gradio app:** see [`gradio-app/`](gradio-app/README.md).
+
+## 📁 Repository layout
+
+```
+lyme-rash-classifier/
+├── notebook/      Original thesis notebook (Google Colab)
+├── training/      train.py, metrics.json, classification report
+├── web-app/       Deployed in-browser app (index.html, tf.min.js, TF.js model)
+└── gradio-app/    Alternative Python/Gradio app
+```
+
+## 🗺️ Roadmap
+
+**Version 2.0** (in progress)
+
+- [ ] **"Not a skin photo" detection:** recognise and reject images that are not skin lesions (pets, objects, scenery) instead of forcing a Lyme / not-Lyme answer
+- [ ] **Higher Lyme recall:** threshold tuning, class weighting, stronger backbones (EfficientNet, ConvNeXt)
+- [ ] **Professional app redesign** with confidence display and clearer guidance
+- [ ] **Grad-CAM heatmaps** showing which part of the image drove the prediction
+- [ ] More diverse, clinically labelled data across skin tones and lesion stages
+
+## ⚠️ Limitations
+
+- Small dataset (987 unique images) of web photos with varied lighting and quality.
+- No labels for skin tone, lesion stage or body site, so fairness across those groups is untested.
 - Not clinically validated.
 
-## Future work
+## 🛠️ Tech stack
 
-Raise Positive recall (threshold tuning, class weighting, stronger backbones), collect more diverse clinically labelled images, add Grad-CAM explanations, and validate with clinicians.
+Python · TensorFlow / Keras · scikit-learn · TensorFlow.js · Google Colab · Hugging Face Spaces
 
-## Tech stack
-
-Python, TensorFlow / Keras, scikit-learn, Google Colab, TensorFlow.js, Hugging Face Spaces.
-
-## References
+## 📚 References
 
 - Hossain, S.I. et al. (2021). Benchmarking convolutional neural networks for diagnosing Lyme disease from images. arXiv:2106.14465.
 - Hossain, S.I. et al. (2022). Exploring convolutional neural networks with transfer learning for diagnosing Lyme disease from skin lesion images. *Computer Methods and Programs in Biomedicine*, 215, 106624.
 - He, K. et al. (2016). Deep residual learning for image recognition. CVPR.
 
-Author: Nishanth Harish
+## 👤 Author
+
+**Nishanth Harish** · MSc Data Analytics, Dublin Business School
+[GitHub](https://github.com/NishanthHarish) · [LinkedIn](https://www.linkedin.com/in/nishanth-harish)
+
+Released under the [MIT License](LICENSE).
