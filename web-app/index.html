@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyme Rash Classifier</title>
+<style>
+  :root {
+    --bg: #f6f7f5; --card: #ffffff; --text: #1d2420; --muted: #5d6762;
+    --border: #d9ddda; --accent: #2f7d5b; --pos: #b3402e; --neg: #2f7d5b; --track: #e8ebe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141816; --card: #1d2320; --text: #e8ece9; --muted: #a0aaa4;
+            --border: #333b37; --accent: #5cc195; --pos: #ef7a64; --neg: #5cc195; --track: #2a312d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+          min-height: 220px; border: 2px dashed var(--border); border-radius: 10px; cursor: pointer;
+          text-align: center; padding: 16px; color: var(--muted); }
+  .drop.over { border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 320px; border-radius: 8px; }
+  .btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+         padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  #status { margin: 16px 0 0; color: var(--muted); min-height: 1.5em; }
+  .verdict { font-size: 1.3rem; font-weight: 700; margin: 16px 0 12px; }
+  .row { display: grid; grid-template-columns: 120px 1fr 56px; align-items: center; gap: 10px; margin: 6px 0; }
+  .bar { height: 10px; background: var(--track); border-radius: 5px; overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: 5px; transition: width .3s; }
+  .pct { text-align: right; font-variant-numeric: tabular-nums; }
+  .note { margin-top: 24px; font-size: .9rem; color: var(--muted); }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lyme Disease Rash Classifier</h1>
+  <p class="sub">Upload a photo of a skin rash to check whether it looks like the bullseye rash (erythema migrans) of Lyme disease.</p>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <span id="placeholder">Drop a photo here, or<br><span class="btn">Choose photo</span></span>
+      <input type="file" id="file" accept="image/*">
+    </label>
+    <p id="status">Loading model…</p>
+    <div id="result" hidden>
+      <div class="verdict" id="verdict"></div>
+      <div class="row"><span>Lyme positive</span><div class="bar"><span id="barPos" style="background:var(--pos)"></span></div><span class="pct" id="pctPos"></span></div>
+      <div class="row"><span>Lyme negative</span><div class="bar"><span id="barNeg" style="background:var(--neg)"></span></div><span class="pct" id="pctNeg"></span></div>
+    </div>
+  </div>
+
+  <p class="note"><strong>Research demo, not a medical diagnosis.</strong> The model is right about 75% of the time and misses some Lyme rashes, so see a doctor about any suspected tick bite or rash. Your photo is processed in your browser and is not uploaded anywhere.</p>
+</main>
+
+<script src="tf.min.js"></script>
+<script>
+const statusEl = document.getElementById('status');
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+let model;
+
+tf.loadGraphModel('model.json').then(m => {
+  model = m;
+  statusEl.textContent = 'Ready. Choose a photo to classify.';
+}).catch(err => {
+  statusEl.textContent = 'Could not load the model: ' + err.message;
+});
+
+async function classify(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  await img.decode();
+  drop.querySelector('#placeholder').hidden = true;
+  drop.querySelectorAll('img').forEach(e => e.remove());
+  drop.prepend(img);
+  if (!model) { statusEl.textContent = 'Model still loading, try again in a moment.'; return; }
+  statusEl.textContent = 'Analysing…';
+  // same input as training: RGB, 224x224 nearest-neighbour resize, raw 0-255 values
+  const probs = tf.tidy(() => {
+    const x = tf.image.resizeNearestNeighbor(tf.browser.fromPixels(img), [224, 224]).toFloat().expandDims(0);
+    return model.predict(x).dataSync();
+  });
+  const [neg, pos] = probs;
+  document.getElementById('verdict').textContent =
+    pos >= 0.5 ? 'Looks like a Lyme (bullseye) rash' : 'Does not look like a Lyme rash';
+  for (const [id, p] of [['Pos', pos], ['Neg', neg]]) {
+    document.getElementById('bar' + id).style.width = (p * 100).toFixed(1) + '%';
+    document.getElementById('pct' + id).textContent = Math.round(p * 100) + '%';
+  }
+  document.getElementById('result').hidden = false;
+  statusEl.textContent = 'Choose another photo to try again.';
+}
+
+fileInput.addEventListener('change', e => classify(e.target.files[0]));
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); classify(e.dataTransfer.files[0]); });
+</script>
+</body>
+</html>

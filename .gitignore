@@ -1,0 +1,15 @@
+# Dataset and full Keras model (too large / not redistributed)
+dataset*/
+dataset*.zip
+*.keras
+*.h5
+lyme.model/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+# OS
+.DS_Store
+__MACOSX/
