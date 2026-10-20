@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "Predictive Modeling of Lyme Disease Detection Using Deep Learning"
+authors:
+  - family-names: Harish
+    given-names: Nishanth
+type: software
+repository-code: "https://github.com/NishanthHarish/lyme-rash-classifier"
+url: "https://huggingface.co/spaces/nishanthharish/lyme-rash-classifier"
+license: MIT
+date-released: 2024-01-01
+keywords:
+  - lyme disease
+  - erythema migrans
+  - deep learning
+  - resnet50
+  - medical imaging
