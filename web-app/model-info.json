@@ -1,0 +1,59 @@
+{
+  "version": "2.0",
+  "model": "EfficientNetV2-S@384 + ResNet-50@224 frozen ImageNet features, logistic-regression heads",
+  "image_size": 384,
+  "classes": [
+    "Negative",
+    "Positive",
+    "Other"
+  ],
+  "lyme_threshold": 0.44,
+  "inconclusive_band": 0.07,
+  "out_of_scope_threshold": 0.5,
+  "metrics": {
+    "model": "EfficientNetV2-S@384 + ResNet-50@224 frozen ImageNet features, logistic-regression heads",
+    "lyme_threshold": 0.44000000000000006,
+    "dev_cv_lyme_auc": 0.8586114348744468,
+    "dev_cv_accuracy_at_0.5": 0.7827956989247312,
+    "rash_test": {
+      "n": 192,
+      "accuracy": 0.7760416666666666,
+      "roc_auc": 0.8411603721948548,
+      "lyme_recall": 0.8275862068965517,
+      "lyme_precision": 0.72,
+      "negative_recall": 0.7333333333333333,
+      "confusion_rows_true_Neg_Pos": [
+        [
+          77,
+          28
+        ],
+        [
+          15,
+          72
+        ]
+      ],
+      "wrongly_rejected_as_not_rash": 0.010416666666666666
+    },
+    "out_of_scope_rejection_rate": {
+      "imagenette": 1.0,
+      "oi_scene": 0.9939759036144579,
+      "oi_skin": 0.9892086330935251,
+      "flowers_unseen": 0.9975
+    },
+    "out_of_scope_overall": 0.9956217162872154,
+    "out_of_scope_n": 1142,
+    "dev_images": {
+      "rash": 775,
+      "out_of_scope": 2980
+    }
+  },
+  "v1_baseline": {
+    "accuracy": 0.7552083333333334,
+    "lyme_recall": 0.6666666666666666,
+    "lyme_precision": 0.7631578947368421,
+    "negative_recall": 0.8285714285714286,
+    "roc_auc": 0.8288998357963875,
+    "n": 192,
+    "note": "v1 recipe (ResNet-50, conv5 fine-tune) retrained on the same v2 split"
+  }
+}

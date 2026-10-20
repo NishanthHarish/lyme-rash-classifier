@@ -3,105 +3,364 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lyme Rash Classifier</title>
+<title>Lyme Rash Classifier 2.0</title>
+<meta name="description" content="In-browser deep learning model that checks whether a skin rash photo looks like the erythema migrans rash of Lyme disease.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23c2410c' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23c2410c'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #f6f7f5; --card: #ffffff; --text: #1d2420; --muted: #5d6762;
-    --border: #d9ddda; --accent: #2f7d5b; --pos: #b3402e; --neg: #2f7d5b; --track: #e8ebe9;
+    --bg: #f7f8fa; --surface: #ffffff; --surface-2: #f1f3f6; --text: #111827; --muted: #5b6474;
+    --border: #e3e6eb; --brand: #0f766e; --brand-ink: #ffffff; --brand-soft: #e6f4f2;
+    --lyme: #c2410c; --lyme-soft: #fdf0e8; --clear: #15803d; --clear-soft: #e9f6ee;
+    --warn: #a16207; --warn-soft: #fbf5e3; --oos: #475569; --oos-soft: #eef1f5;
+    --track: #e7eaee; --shadow: 0 1px 2px rgba(16,24,40,.05), 0 4px 16px rgba(16,24,40,.06);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #141816; --card: #1d2320; --text: #e8ece9; --muted: #a0aaa4;
-            --border: #333b37; --accent: #5cc195; --pos: #ef7a64; --neg: #5cc195; --track: #2a312d; }
+    :root {
+      --bg: #0d1117; --surface: #151b23; --surface-2: #1b232d; --text: #e6edf3; --muted: #9aa5b1;
+      --border: #2a333e; --brand: #2dd4bf; --brand-ink: #062a26; --brand-soft: #12302c;
+      --lyme: #fb8a5a; --lyme-soft: #33201a; --clear: #4ade80; --clear-soft: #15291d;
+      --warn: #facc15; --warn-soft: #2e2913; --oos: #a5b4c6; --oos-soft: #1e2630;
+      --track: #26303b; --shadow: none;
+    }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { scroll-behavior: smooth; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 32px 16px 48px; }
-  h1 { font-size: 1.6rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
-  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-          min-height: 220px; border: 2px dashed var(--border); border-radius: 10px; cursor: pointer;
-          text-align: center; padding: 16px; color: var(--muted); }
-  .drop.over { border-color: var(--accent); }
-  .drop img { max-width: 100%; max-height: 320px; border-radius: 8px; }
-  .btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 8px;
-         padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
-  #status { margin: 16px 0 0; color: var(--muted); min-height: 1.5em; }
-  .verdict { font-size: 1.3rem; font-weight: 700; margin: 16px 0 12px; }
-  .row { display: grid; grid-template-columns: 120px 1fr 56px; align-items: center; gap: 10px; margin: 6px 0; }
-  .bar { height: 10px; background: var(--track); border-radius: 5px; overflow: hidden; }
-  .bar span { display: block; height: 100%; border-radius: 5px; transition: width .3s; }
-  .pct { text-align: right; font-variant-numeric: tabular-nums; }
-  .note { margin-top: 24px; font-size: .9rem; color: var(--muted); }
-  input[type=file] { display: none; }
+         font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+               backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  header.top .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; color: var(--text); text-decoration: none; }
+  .logo svg { flex: none; }
+  .badge { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+  nav { margin-left: auto; display: flex; gap: 20px; font-size: .92rem; }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--text); }
+
+  .hero { padding: 48px 0 24px; }
+  .hero h1 { font-size: clamp(1.8rem, 3.6vw, 2.6rem); line-height: 1.15; letter-spacing: -.02em; margin: 0 0 12px; max-width: 18ch; }
+  .hero p { color: var(--muted); font-size: 1.08rem; max-width: 60ch; margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted);
+          background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+  .chip b { color: var(--text); font-weight: 600; }
+
+  .app { display: grid; grid-template-columns: 1.05fr 1fr; gap: 20px; margin: 16px 0 56px; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } nav { display: none; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; min-width: 0; }
+  .card h2 { font-size: 1rem; margin: 0 0 14px; letter-spacing: -.01em; }
+
+  .drop { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+          min-height: 340px; border: 2px dashed var(--border); border-radius: 12px; cursor: pointer; text-align: center;
+          padding: 20px; color: var(--muted); background: var(--surface-2); transition: border-color .15s, background .15s; overflow: hidden; }
+  .drop:hover, .drop.over { border-color: var(--brand); }
+  .drop:focus-within { outline: 3px solid color-mix(in srgb, var(--brand) 40%, transparent); outline-offset: 2px; }
+  .drop .icon { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); }
+  .drop strong { color: var(--text); font-size: 1.05rem; }
+  .drop img.preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--surface-2); }
+  .drop.has-img .ph { visibility: hidden; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; background: var(--brand); color: var(--brand-ink); border: 0; border-radius: 10px;
+         padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .tips { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: .88rem; color: var(--muted); }
+  .tips li::before { content: "✓"; color: var(--brand); font-weight: 700; margin-right: 8px; }
+
+  #status { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .95rem; min-height: 1.6em; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--track); border-top-color: var(--brand); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { display: grid; place-items: center; text-align: center; min-height: 300px; color: var(--muted); }
+  .empty svg { opacity: .5; margin-bottom: 8px; }
+
+  .verdict { border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; }
+  .verdict .dot { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 1.1rem; }
+  .verdict h3 { margin: 0; font-size: 1.2rem; letter-spacing: -.01em; }
+  .verdict p { margin: 4px 0 0; color: var(--muted); font-size: .94rem; }
+  .v-lyme { background: var(--lyme-soft); } .v-lyme .dot { background: var(--lyme); color: var(--surface); } .v-lyme h3 { color: var(--lyme); }
+  .v-clear { background: var(--clear-soft); } .v-clear .dot { background: var(--clear); color: var(--surface); } .v-clear h3 { color: var(--clear); }
+  .v-warn { background: var(--warn-soft); } .v-warn .dot { background: var(--warn); color: var(--surface); } .v-warn h3 { color: var(--warn); }
+  .v-oos { background: var(--oos-soft); } .v-oos .dot { background: var(--oos); color: var(--surface); } .v-oos h3 { color: var(--oos); }
+
+  .gauge { margin: 6px 0 20px; }
+  .gauge .lab { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  .gauge .lab b { color: var(--text); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .gbar { position: relative; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--clear) 0%, var(--warn) 50%, var(--lyme) 100%); opacity: .9; }
+  .gbar .mark { position: absolute; top: -5px; width: 4px; height: 22px; margin-left: -2px; border-radius: 2px; background: var(--text); box-shadow: 0 0 0 2px var(--surface); transition: left .35s; }
+  .gbar .thr { position: absolute; top: 14px; font-size: .72rem; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+  .gbar .thr::before { content: ""; position: absolute; left: 50%; top: -16px; width: 1px; height: 14px; background: var(--surface); }
+
+  .probs { display: grid; gap: 8px; margin-top: 30px; }
+  .row { display: grid; grid-template-columns: 150px 1fr 48px; align-items: center; gap: 10px; font-size: .9rem; }
+  .bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: 4px; transition: width .35s; }
+  .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .small { font-size: .82rem; color: var(--muted); margin-top: 16px; }
+
+  section { padding: 40px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 1.5rem; letter-spacing: -.02em; margin: 0 0 8px; }
+  section .lead { color: var(--muted); margin: 0 0 24px; max-width: 70ch; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 760px) { .steps, .stats { grid-template-columns: 1fr 1fr !important; } }
+  @media (max-width: 480px) { .steps, .stats { grid-template-columns: 1fr !important; } .row { grid-template-columns: 110px 1fr 44px; } }
+  .step .n { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: .9rem; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 4px; font-size: 1rem; }
+  .step p { margin: 0; color: var(--muted); font-size: .93rem; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .stat .v { font-size: 1.8rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat .k { color: var(--muted); font-size: .88rem; }
+  .stat .d { font-size: .8rem; color: var(--clear); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tablewrap { overflow-x: auto; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  ul.clean { margin: 0; padding-left: 18px; color: var(--muted); }
+  ul.clean li { margin: 6px 0; }
+  .disclaimer { border-left: 4px solid var(--warn); background: var(--warn-soft); padding: 14px 16px; border-radius: 8px; font-size: .93rem; }
+  footer { padding: 28px 0 40px; color: var(--muted); font-size: .88rem; border-top: 1px solid var(--border); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Lyme Disease Rash Classifier</h1>
-  <p class="sub">Upload a photo of a skin rash to check whether it looks like the bullseye rash (erythema migrans) of Lyme disease.</p>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="var(--lyme)" stroke-width="3"/><circle cx="16" cy="16" r="5" fill="var(--lyme)"/></svg>
+      Lyme Rash Classifier <span class="badge">v2.0</span>
+    </a>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#performance">Performance</a>
+      <a href="#limits">Limitations</a>
+      <a href="https://github.com/NishanthHarish/lyme-rash-classifier" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
 
-  <div class="card">
-    <label class="drop" id="drop">
-      <span id="placeholder">Drop a photo here, or<br><span class="btn">Choose photo</span></span>
-      <input type="file" id="file" accept="image/*">
-    </label>
-    <p id="status">Loading model…</p>
-    <div id="result" hidden>
-      <div class="verdict" id="verdict"></div>
-      <div class="row"><span>Lyme positive</span><div class="bar"><span id="barPos" style="background:var(--pos)"></span></div><span class="pct" id="pctPos"></span></div>
-      <div class="row"><span>Lyme negative</span><div class="bar"><span id="barNeg" style="background:var(--neg)"></span></div><span class="pct" id="pctNeg"></span></div>
+<main class="wrap">
+  <div class="hero">
+    <h1>Check a skin rash for signs of Lyme disease</h1>
+    <p>Upload a photo of a rash and a deep learning model estimates whether it looks like erythema migrans, the expanding "bullseye" rash of early Lyme disease. It first checks that the photo actually shows a skin rash.</p>
+    <div class="chips">
+      <span class="chip">🔒 <b>Private</b> runs in your browser</span>
+      <span class="chip">🧠 <b>EfficientNetV2 + ResNet-50</b> ImageNet features</span>
+      <span class="chip">🛡️ <b>Out-of-scope check</b> rejects non-rash photos</span>
     </div>
   </div>
 
-  <p class="note"><strong>Research demo, not a medical diagnosis.</strong> The model is right about 75% of the time and misses some Lyme rashes, so see a doctor about any suspected tick bite or rash. Your photo is processed in your browser and is not uploaded anywhere.</p>
+  <div class="app">
+    <div class="card">
+      <h2>1. Add a photo</h2>
+      <label class="drop" id="drop">
+        <div class="ph">
+          <div class="icon" style="margin:0 auto 10px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16l4-4 4 4 3-3 5 5"/><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/></svg></div>
+          <strong>Drop a photo here</strong>
+          <div>or <span style="color:var(--brand);font-weight:600">browse your files</span> · JPG, PNG, HEIC from camera</div>
+        </div>
+        <input type="file" id="file" accept="image/*" aria-label="Choose a rash photo">
+      </label>
+      <div class="actions">
+        <label class="btn" for="file">Choose photo</label>
+        <button class="btn ghost" id="reset" type="button" hidden>Clear</button>
+      </div>
+      <ul class="tips">
+        <li>Fill the frame with the rash and some surrounding skin</li>
+        <li>Use even daylight, no flash glare or filters</li>
+        <li>Hold the camera steady and in focus</li>
+      </ul>
+    </div>
+
+    <div class="card" aria-live="polite">
+      <h2>2. Result</h2>
+      <div id="status"><span class="spinner"></span><span id="statusText">Loading model…</span></div>
+      <div class="empty" id="empty">
+        <div>
+          <svg width="56" height="56" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="16" r="5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <div>Your result will appear here.</div>
+        </div>
+      </div>
+      <div id="result" hidden>
+        <div class="verdict" id="verdict"><div class="dot" id="vIcon"></div><div><h3 id="vTitle"></h3><p id="vText"></p></div></div>
+        <div class="gauge" id="gauge">
+          <div class="lab"><span>Lyme-like score</span><b id="score"></b></div>
+          <div class="gbar"><div class="mark" id="mark"></div><div class="thr" id="thr"></div></div>
+        </div>
+        <div class="probs">
+          <div class="row"><span>Lyme rash (EM)</span><div class="bar"><span id="bPos" style="background:var(--lyme)"></span></div><span class="pct" id="pPos"></span></div>
+          <div class="row"><span>Other rash</span><div class="bar"><span id="bNeg" style="background:var(--clear)"></span></div><span class="pct" id="pNeg"></span></div>
+          <div class="row"><span>Not a rash photo</span><div class="bar"><span id="bOth" style="background:var(--oos)"></span></div><span class="pct" id="pOth"></span></div>
+        </div>
+        <p class="small">Research demo, not a diagnosis. Analysed on this device in <span id="ms"></span> ms; the photo was not uploaded.</p>
+      </div>
+    </div>
+  </div>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p class="lead">One neural network answers two questions: is this a photo of a skin rash at all, and if so, does it look like a Lyme rash?</p>
+    <div class="steps">
+      <div class="step card"><div class="n">1</div><h3>Scope check</h3><p>The model was also trained on thousands of everyday photos and healthy skin (hands, arms, legs, faces). If the photo looks like one of those, it says so instead of guessing.</p></div>
+      <div class="step card"><div class="n">2</div><h3>Rash classification</h3><p>For rash photos, features from two pretrained networks (EfficientNetV2-S and ResNet-50) feed a classifier trained on erythema migrans and 12 look-alike conditions (ringworm, cellulitis, hives, spider bites and more) that scores how Lyme-like the rash is.</p></div>
+      <div class="step card"><div class="n">3</div><h3>Calibrated decision</h3><p>The cut-off was chosen by cross-validation to balance catching Lyme rashes against false alarms. Scores close to the cut-off are reported as inconclusive.</p></div>
+    </div>
+  </section>
+
+  <section id="performance">
+    <h2>Performance</h2>
+    <p class="lead" id="perfLead">Measured on held-out test images the model never saw. Near-duplicate photos were grouped before splitting, so no copy of a test image was used in training.</p>
+    <div class="stats" id="stats"></div>
+    <div class="two">
+      <div class="card tablewrap">
+        <table>
+          <thead><tr><th>Metric (rash photos)</th><th class="num">v1.0</th><th class="num">v2.0</th></tr></thead>
+          <tbody id="cmp"></tbody>
+        </table>
+      </div>
+      <div class="card tablewrap">
+        <table>
+          <thead><tr><th>Out-of-scope test set</th><th class="num">Rejected</th></tr></thead>
+          <tbody id="oos"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="limits">
+    <h2>Limitations</h2>
+    <div class="two">
+      <ul class="clean">
+        <li>Trained on about 970 unique web images of rashes; real clinical photos may look different.</li>
+        <li>The dataset has no skin-tone, body-site or lesion-stage labels, so performance across those groups is unknown. Erythema migrans is harder to see on darker skin.</li>
+        <li>Some rashes are mimics of each other even for dermatologists; a photo alone cannot confirm Lyme disease.</li>
+      </ul>
+      <div class="disclaimer"><strong>Not a medical device.</strong> This is a research and portfolio project and has not been clinically validated. It cannot diagnose or rule out Lyme disease. If you have had a tick bite or have an expanding rash, fever or joint pain, see a doctor.</div>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <span>Built by <a href="https://github.com/NishanthHarish" target="_blank" rel="noopener">Nishanth Harish</a> · MSc Data Analytics, Dublin Business School</span>
+    <span>TensorFlow · Keras · TensorFlow.js · <a href="https://github.com/NishanthHarish/lyme-rash-classifier" target="_blank" rel="noopener">Source code</a></span>
+  </div>
+</footer>
 
 <script src="tf.min.js"></script>
 <script>
-const statusEl = document.getElementById('status');
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('file');
-let model;
+const $ = id => document.getElementById(id);
+const pct = v => (v * 100).toFixed(1) + '%';
+let model, info;
 
-tf.loadGraphModel('model.json').then(m => {
-  model = m;
-  statusEl.textContent = 'Ready. Choose a photo to classify.';
-}).catch(err => {
-  statusEl.textContent = 'Could not load the model: ' + err.message;
-});
-
-async function classify(file) {
-  if (!file || !file.type.startsWith('image/')) return;
-  const img = new Image();
-  img.src = URL.createObjectURL(file);
-  await img.decode();
-  drop.querySelector('#placeholder').hidden = true;
-  drop.querySelectorAll('img').forEach(e => e.remove());
-  drop.prepend(img);
-  if (!model) { statusEl.textContent = 'Model still loading, try again in a moment.'; return; }
-  statusEl.textContent = 'Analysing…';
-  // same input as training: RGB, 224x224 nearest-neighbour resize, raw 0-255 values
-  const probs = tf.tidy(() => {
-    const x = tf.image.resizeNearestNeighbor(tf.browser.fromPixels(img), [224, 224]).toFloat().expandDims(0);
-    return model.predict(x).dataSync();
-  });
-  const [neg, pos] = probs;
-  document.getElementById('verdict').textContent =
-    pos >= 0.5 ? 'Looks like a Lyme (bullseye) rash' : 'Does not look like a Lyme rash';
-  for (const [id, p] of [['Pos', pos], ['Neg', neg]]) {
-    document.getElementById('bar' + id).style.width = (p * 100).toFixed(1) + '%';
-    document.getElementById('pct' + id).textContent = Math.round(p * 100) + '%';
-  }
-  document.getElementById('result').hidden = false;
-  statusEl.textContent = 'Choose another photo to try again.';
+function setStatus(text, busy) {
+  $('statusText').textContent = text;
+  $('status').querySelector('.spinner').hidden = !busy;
 }
 
-fileInput.addEventListener('change', e => classify(e.target.files[0]));
+async function init() {
+  try {
+    info = await (await fetch('model-info.json')).json();
+    renderPerformance(info);
+    // about 87 MB on first visit, cached by the browser afterwards
+    model = await tf.loadGraphModel('model.json', {
+      onProgress: f => setStatus(f < 1 ? `Downloading model… ${Math.round(f * 100)}%` : 'Preparing model…', true),
+    });
+    tf.tidy(() => model.predict(tf.zeros([1, info.image_size, info.image_size, 3])));  // warm-up
+    setStatus('Ready. Add a photo to analyse it.', false);
+  } catch (err) {
+    setStatus('Could not load the model: ' + err.message, false);
+  }
+}
+
+function renderPerformance(i) {
+  const t = i.metrics.rash_test, o = i.metrics.out_of_scope_rejection_rate, v1 = i.v1_baseline;
+  $('stats').innerHTML = [
+    [pct(t.accuracy), 'Rash accuracy', v1 && `+${((t.accuracy - v1.accuracy) * 100).toFixed(1)} pts vs v1`],
+    [pct(t.lyme_recall), 'Lyme rashes caught (recall)', v1 && `+${((t.lyme_recall - v1.lyme_recall) * 100).toFixed(1)} pts vs v1`],
+    [t.roc_auc.toFixed(3), 'ROC AUC', v1 && v1.roc_auc ? `v1: ${v1.roc_auc.toFixed(3)}` : ''],
+    [pct(i.metrics.out_of_scope_overall), 'Non-rash photos rejected', 'new in v2'],
+  ].map(([v, k, d]) => `<div class="stat card"><div class="v">${v}</div><div class="k">${k}</div><div class="d">${d || ''}</div></div>`).join('');
+  const rows = [
+    ['Accuracy', 'accuracy'], ['Lyme recall (sensitivity)', 'lyme_recall'], ['Lyme precision', 'lyme_precision'],
+    ['Other-rash recall (specificity)', 'negative_recall'], ['ROC AUC', 'roc_auc'],
+  ];
+  $('cmp').innerHTML = rows.map(([label, k]) => {
+    const f = k === 'roc_auc' ? x => x.toFixed(3) : pct;
+    return `<tr><td>${label}</td><td class="num">${v1 && v1[k] != null ? f(v1[k]) : '–'}</td><td class="num"><b>${f(t[k])}</b></td></tr>`;
+  }).join('') + `<tr><td>Real rashes wrongly rejected</td><td class="num">–</td><td class="num"><b>${pct(t.wrongly_rejected_as_not_rash)}</b></td></tr>`;
+  const names = { imagenette: 'Everyday objects (ImageNet subset)', oi_scene: 'Street, home and people scenes', oi_skin: 'Healthy skin: hands, arms, legs, faces', flowers_unseen: 'Flowers (category never seen in training)' };
+  $('oos').innerHTML = Object.entries(o).map(([k, v]) => `<tr><td>${names[k] || k}</td><td class="num"><b>${pct(v)}</b></td></tr>`).join('');
+  $('perfLead').textContent += ` Test set: ${t.n} rash photos and ${i.metrics.out_of_scope_n} out-of-scope photos.`;
+}
+
+function showVerdict(kind, icon, title, text) {
+  $('verdict').className = 'verdict v-' + kind;
+  $('vIcon').textContent = icon; $('vTitle').textContent = title; $('vText').textContent = text;
+}
+
+async function classify(file) {
+  if (!file || !file.type.startsWith('image/')) { setStatus('That file is not an image. Please choose a JPG or PNG photo.', false); return; }
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  try { await img.decode(); } catch { setStatus('This image could not be opened by your browser. Try a JPG or PNG.', false); return; }
+  const drop = $('drop');
+  drop.querySelectorAll('img.preview').forEach(e => e.remove());
+  img.className = 'preview'; img.alt = 'Uploaded photo';
+  drop.appendChild(img); drop.classList.add('has-img'); $('reset').hidden = false;
+  if (!model) { setStatus('Model still loading, try again in a moment.', true); return; }
+  setStatus('Analysing…', true);
+  await tf.nextFrame();
+  const t0 = performance.now();
+  const S = info.image_size;
+  // same input as training: whole image, bilinear resize to SxS, RGB 0-255 (normalisation is inside the model)
+  const p = tf.tidy(() => model.predict(tf.image.resizeBilinear(tf.browser.fromPixels(img), [S, S], false, true).toFloat().expandDims(0)).dataSync());
+  $('ms').textContent = Math.round(performance.now() - t0);
+  const [neg, pos, other] = p;
+  const score = pos / Math.max(neg + pos, 1e-7);
+  const thr = info.lyme_threshold, band = info.inconclusive_band;
+  for (const [id, v] of [['Pos', pos], ['Neg', neg], ['Oth', other]]) {
+    $('b' + id).style.width = (v * 100).toFixed(1) + '%'; $('p' + id).textContent = Math.round(v * 100) + '%';
+  }
+  $('gauge').hidden = other >= info.out_of_scope_threshold;
+  $('score').textContent = Math.round(score * 100) + ' / 100';
+  $('mark').style.left = (score * 100) + '%';
+  $('thr').style.left = (thr * 100) + '%'; $('thr').textContent = 'cut-off ' + Math.round(thr * 100);
+  if (other >= info.out_of_scope_threshold) {
+    showVerdict('oos', '?', 'This doesn\'t look like a skin rash photo',
+      'The model can only assess close-up photos of a rash on skin. Try a clear, well-lit photo where the rash fills most of the frame.');
+  } else if (Math.abs(score - thr) < band) {
+    showVerdict('warn', '~', 'Inconclusive',
+      'The rash has some features of a Lyme rash but the model is not confident either way. A doctor should look at it, especially after a tick bite.');
+  } else if (score >= thr) {
+    showVerdict('lyme', '!', 'Looks like a Lyme (erythema migrans) rash',
+      'This rash resembles the expanding rash of early Lyme disease. Please see a doctor; early Lyme disease is treated with antibiotics.');
+  } else {
+    showVerdict('clear', '✓', 'Does not look like a Lyme rash',
+      'The rash looks more like another skin condition. This does not rule out Lyme disease, so see a doctor if you had a tick bite or the rash spreads.');
+  }
+  $('empty').hidden = true; $('result').hidden = false;
+  setStatus('Done. Add another photo to try again.', false);
+}
+
+$('file').addEventListener('change', e => classify(e.target.files[0]));
+$('reset').addEventListener('click', () => {
+  $('drop').querySelectorAll('img.preview').forEach(e => e.remove());
+  $('drop').classList.remove('has-img'); $('reset').hidden = true; $('file').value = '';
+  $('result').hidden = true; $('empty').hidden = false; setStatus('Ready. Add a photo to analyse it.', false);
+});
+const drop = $('drop');
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); classify(e.dataTransfer.files[0]); });
+document.addEventListener('paste', e => { const f = [...e.clipboardData.files].find(f => f.type.startsWith('image/')); if (f) classify(f); });
+init();
 </script>
 </body>
 </html>
