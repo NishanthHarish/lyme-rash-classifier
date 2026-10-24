@@ -139,10 +139,10 @@
     <svg class="wlogo" width="56" height="56" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="#b2452f" stroke-width="2.5" stroke-dasharray="70 4"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#b2452f" stroke-width="1.5"/><circle cx="16" cy="16" r="3.5" fill="#b2452f"/></svg>
     <h1 id="wTitle">Welcome to Lyme Rash Check</h1>
     <p>We're getting the rash checker ready. It runs on your own phone or computer, so your photos stay private and are never uploaded.</p>
-    <p>The first visit takes a little while (about 87 MB to download). After that it opens almost instantly.</p>
+    <p>The first visit takes a little while (about 87 MB to download). After that it opens almost instantly. You can open the app and choose your photo now; it will be checked as soon as loading finishes.</p>
     <div class="wbar" aria-hidden="true"><span id="wBar"></span></div>
     <div id="wText">Starting…</div>
-    <button class="btn" id="wGo" type="button" disabled>Please wait…</button>
+    <button class="btn" id="wGo" type="button">Open the app now</button>
     <button id="wSkip" type="button">Read about Lyme disease while you wait</button>
   </div>
 </div>
@@ -178,7 +178,7 @@
           <strong>Upload a photo of the rash</strong>
           <span>Drag it here, or tap to take or choose one</span>
         </div>
-        <input type="file" id="file" accept="image/*" aria-label="Choose a rash photo">
+        <input type="file" id="file" accept="image/*,.dng,.heic,.heif" aria-label="Choose a rash photo">
       </label>
       <div class="controls">
         <label class="btn" for="file">Choose photo</label>
@@ -318,12 +318,13 @@ async function init() {
     tf.tidy(() => model.predict(tf.zeros([1, info.image_size, info.image_size, 3])));  // warm-up
     setStatus('Ready. Add a photo to start.', false);
     setWelcome('Ready!', 1);
-    $('wGo').disabled = false; $('wGo').textContent = 'Check a rash photo'; $('wGo').focus();
+    $('wGo').textContent = 'Check a rash photo'; $('wGo').focus();
     $('wSkip').hidden = true;
+    if (pending) analyse(pending);
   } catch (err) {
     setStatus('Could not load the model: ' + err.message, false);
     setWelcome('Sorry, the checker could not load. Please check your connection and refresh the page.', 0);
-    $('wGo').disabled = false; $('wGo').textContent = 'Continue to the page';
+    $('wGo').textContent = 'Continue to the page';
   }
 }
 
@@ -348,16 +349,119 @@ function showVerdict(kind, title, text) {
   $('vTitle').textContent = title; $('vText').textContent = text;
 }
 
-async function classify(file) {
-  if (!file || !file.type.startsWith('image/')) { setStatus('That file is not an image. Please choose a JPG or PNG photo.', false); return; }
+// --- iPhone formats: DNG (ProRAW) and HEIC -------------------------------------------
+// Browsers can't open DNG, and most can't open HEIC. A DNG file carries ready-made JPEG
+// previews, so we pull out the largest one; HEIC is converted with heic2any (loaded on demand).
+const isImageFile = f => f && (f.type.startsWith('image/') || /\.(dng|heic|heif)$/i.test(f.name));
+
+async function tryDecode(blob) {
   const img = new Image();
-  img.src = URL.createObjectURL(file);
-  try { await img.decode(); } catch { setStatus('This image could not be opened by your browser. Try a JPG or PNG.', false); return; }
+  img.src = URL.createObjectURL(blob);
+  try { await img.decode(); return img; } catch { URL.revokeObjectURL(img.src); return null; }
+}
+
+function tiffImages(buf) {
+  const dv = new DataView(buf), n = buf.byteLength;
+  const le = dv.getUint16(0) === 0x4949;
+  const u16 = o => dv.getUint16(o, le), u32 = o => dv.getUint32(o, le);
+  const SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 7: 1, 13: 4 };
+  const ifds = [], seen = new Set(), todo = [u32(4)];
+  while (todo.length && ifds.length < 40) {
+    const off = todo.shift();
+    if (!off || seen.has(off) || off + 2 > n) continue;
+    seen.add(off);
+    const count = u16(off), tags = {};
+    for (let i = 0; i < count && off + 14 + i * 12 <= n; i++) {
+      const e = off + 2 + i * 12, type = u16(e + 2), cnt = u32(e + 4), sz = SIZE[type] || 1;
+      const at = sz * cnt <= 4 ? e + 8 : u32(e + 8), vals = [];
+      for (let k = 0; k < Math.min(cnt, 64) && at + (k + 1) * sz <= n; k++) {
+        const q = at + k * sz; vals.push(sz === 2 ? u16(q) : sz === 4 ? u32(q) : dv.getUint8(q));
+      }
+      tags[u16(e)] = vals;
+    }
+    ifds.push(tags);
+    if (tags[330]) todo.push(...tags[330]);  // SubIFDs hold the full-size previews
+    if (off + 6 + count * 12 <= n) todo.push(u32(off + 2 + count * 12));
+  }
+  return ifds;
+}
+
+function orient(src, w, h, o) {
+  const c = document.createElement('canvas'), side = o >= 5;
+  c.width = side ? h : w; c.height = side ? w : h;
+  const g = c.getContext('2d');
+  if (o === 3) { g.translate(w, h); g.rotate(Math.PI); }
+  else if (o === 6) { g.translate(h, 0); g.rotate(Math.PI / 2); }
+  else if (o === 8) { g.translate(0, w); g.rotate(-Math.PI / 2); }
+  g.drawImage(src, 0, 0);
+  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+}
+
+async function dngToJpeg(file) {
+  const buf = await file.arrayBuffer();
+  const ifds = tiffImages(buf), o = (ifds[0] && ifds[0][274] || [1])[0];
+  const spans = [];
+  for (const t of ifds) {
+    if (t[513] && t[514]) spans.push([t[513][0], t[514][0]]);
+    if ((t[259] || [])[0] === 7 || (t[259] || [])[0] === 6) if ((t[273] || []).length === 1) spans.push([t[273][0], t[279][0]]);
+  }
+  let best = null;
+  for (const [a, len] of spans) {
+    if (new Uint8Array(buf, a, 2).join() !== '255,216') continue;
+    try { const bmp = await createImageBitmap(new Blob([new Uint8Array(buf, a, len)], { type: 'image/jpeg' })); if (!best || bmp.width * bmp.height > best.width * best.height) best = bmp; } catch {}
+  }
+  if (best) return orient(best, best.width, best.height, o);
+  // last resort: the small uncompressed RGB thumbnail
+  const t = ifds.find(t => (t[259] || [])[0] === 1 && (t[262] || [])[0] === 2 && (t[277] || [])[0] === 3 && (t[258] || [])[0] === 8 && t[273]);
+  if (!t) return null;
+  const w = t[256][0], h = t[257][0], src = new Uint8Array(buf, t[273][0], w * h * 3), px = new ImageData(w, h);
+  for (let i = 0, j = 0; i < w * h * 3; i += 3, j += 4) { px.data[j] = src[i]; px.data[j + 1] = src[i + 1]; px.data[j + 2] = src[i + 2]; px.data[j + 3] = 255; }
+  return orient(await createImageBitmap(px), w, h, o);
+}
+
+let heic2anyReady;
+async function heicToJpeg(file) {
+  heic2anyReady = heic2anyReady || new Promise((ok, fail) => {
+    const s = document.createElement('script'); s.src = 'heic2any.min.js'; s.onload = ok; s.onerror = fail; document.head.appendChild(s);
+  });
+  await heic2anyReady;
+  const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 });
+  return Array.isArray(out) ? out[0] : out;
+}
+
+async function openImage(file) {
+  const img = await tryDecode(file);  // JPG, PNG, WebP; Safari also opens HEIC itself
+  if (img) return img;
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const tag = String.fromCharCode(...head);
+  try {
+    if (tag.startsWith('II*') || tag.startsWith('MM\0*') || /\.dng$/i.test(file.name)) {
+      setStatus('Opening your iPhone RAW (DNG) photo…', true);
+      const jpg = await dngToJpeg(file); return jpg && tryDecode(jpg);
+    }
+    if (/ftyp(heic|heix|hevc|mif1|msf1)/.test(tag) || /\.hei[cf]$/i.test(file.name)) {
+      setStatus('Opening your iPhone (HEIC) photo…', true);
+      return tryDecode(await heicToJpeg(file));
+    }
+  } catch (err) { console.warn(err); }
+  return null;
+}
+
+let pending = null;
+async function classify(file) {
+  if (!isImageFile(file)) { setStatus('That file is not a photo. Please choose a JPG, PNG, HEIC or DNG photo.', false); return; }
+  const img = await openImage(file);
+  if (!img) { setStatus('Sorry, this photo could not be opened. Try taking it again in the normal Photo mode, or send it as a JPG.', false); return; }
   const drop = $('drop');
   drop.querySelectorAll('img.preview').forEach(e => e.remove());
   img.className = 'preview'; img.alt = 'Uploaded photo';
   drop.appendChild(img); drop.classList.add('has-img'); $('reset').hidden = false;
-  if (!model) { setStatus('The model is still loading, try again in a moment.', true); return; }
+  if (!model) { pending = img; setStatus('Got your photo. It will be checked as soon as the checker finishes loading…', true); return; }
+  await analyse(img);
+}
+
+async function analyse(img) {
+  pending = null;
   setStatus('Looking at your photo…', true);
   await tf.nextFrame();
   const t0 = performance.now();
@@ -405,7 +509,7 @@ const drop = $('drop');
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); classify(e.dataTransfer.files[0]); });
-document.addEventListener('paste', e => { const f = [...e.clipboardData.files].find(f => f.type.startsWith('image/')); if (f) classify(f); });
+document.addEventListener('paste', e => { const f = [...e.clipboardData.files].find(isImageFile); if (f) classify(f); });
 init();
 </script>
 </body>
